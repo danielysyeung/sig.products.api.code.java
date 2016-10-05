@@ -47,8 +47,8 @@ Temporary Items
 .apdisk
 
 # Eclipse and Maven
-.classpath
-.project
-.settings/
+# .classpath
+# .project
+# .settings/
 target/
 log/
