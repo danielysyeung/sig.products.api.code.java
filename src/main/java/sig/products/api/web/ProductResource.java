@@ -1,8 +1,10 @@
 package sig.products.api.web;
 
 import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -161,5 +163,75 @@ public class ProductResource {
 			return Response.status(500).entity("").build();
 		}
 	}
+	
+	@PUT
+	@Path("{sku}")
+	@Consumes(MediaType.APPLICATION_JSON)	
+	public Response put(@PathParam("sku") final String sku, final Product product) {		
+		System.out.println("PUT request for /products/");
+
+		try {
+
+			String productInJson = new ObjectMapper().writeValueAsString(product);		
+			System.out.println(productInJson);
+
+			if (product.getSku() == null || product.getSku().trim().isEmpty() || 
+				product.getName() == null || product.getName().trim().isEmpty()) {
+				return Response.status(400).entity("").build();
+			}
 			
+			Bson queryBySku = eq("sku", sku);
+			Document valueDoc = new Document().append("sku", product.getSku()).append("name", product.getName()).append("description", product.getDescription());
+						
+			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
+			MongoDatabase db = client.getDatabase(sigDb); 
+			MongoCollection<Document> collection = db.getCollection("product");
+			
+			Document doc = collection.find(queryBySku).first();
+			if (doc == null) {
+				client.close();
+				return Response.status(404).entity("").build();
+			}
+
+			collection.updateOne(queryBySku, new Document("$set", valueDoc).append("$currentDate", new Document("lastUpdatedTimestamp", true)),	new UpdateOptions().upsert(true));
+			client.close();
+			
+			return Response.status(204).entity("").build();						
+			
+		} catch (Exception e) {
+			System.out.println("Error: " + e);
+			return Response.status(500).entity("").build();
+		}
+	}
+	
+	@DELETE
+	@Path("{sku}")	
+	public Response delete(@PathParam("sku") final String sku) {		
+		System.out.println("DELETE request for /products/");
+
+		try {
+
+			Bson queryBySku = eq("sku", sku);
+
+			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
+			MongoDatabase db = client.getDatabase(sigDb); 
+			MongoCollection<Document> collection = db.getCollection("product");
+			
+			Document doc = collection.find(queryBySku).first();
+			if (doc == null) {
+				client.close();
+				return Response.status(404).entity("").build();
+			}
+
+			collection.deleteOne(queryBySku);
+			client.close();
+			
+			return Response.status(200).entity("").build();						
+			
+		} catch (Exception e) {
+			System.out.println("Error: " + e);
+			return Response.status(500).entity("").build();
+		}
+	}
+	
 }
