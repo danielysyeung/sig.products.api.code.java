@@ -31,6 +31,7 @@ import static com.mongodb.client.model.Projections.include;
 
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import static com.mongodb.client.model.Projections.excludeId;
@@ -40,15 +41,7 @@ public class ProductResource {
 	
 	public String mongoUri = "mongodb://localhost";
 	public String sigDb = "sigdb";
-		
-	@GET
-	@Path("/")
-	@Produces(MediaType.TEXT_HTML)
-	public Response getRoot() {
-		System.out.println("GET request for /");
-		return Response.status(200).entity("<html><body><h2>SIG Products API</h2></body></html>").build();
-	}
-	
+			
 	@GET
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -58,7 +51,7 @@ public class ProductResource {
 		try {
 			
 			Bson fieldProjection = fields(include("sku", "name", "description", "lastUpdatedTimestamp"), excludeId());
-			Bson queryBySku = null;
+			Bson queryBySku = new Document();
 			
 			// TODO filtering, sorting, pagination		
 			if (sku != null && !sku.trim().isEmpty()) {
@@ -71,10 +64,11 @@ public class ProductResource {
 			
 			FindIterable<Document> docs = collection.find(queryBySku).projection(fieldProjection);
 			
-			List<Product> productList = new ArrayList<Product>();
-			if (docs != null && docs.iterator() != null) {
-				while (docs.iterator().hasNext()) {
-					Document doc = docs.iterator().next();
+			List<Product> productList = new ArrayList<Product>();			
+			if (docs != null && docs.iterator() != null) {				
+				Iterator<Document> i = docs.iterator();
+				while (i.hasNext()) {
+					Document doc = i.next();
 					if (doc != null) {
 						Product product = new Product();
 						product.setSku(doc.getString("sku"));
@@ -84,9 +78,8 @@ public class ProductResource {
 						productList.add(product);
 					}
 				}
-			}							
-			client.close();
-			
+			}										
+			client.close();			
 			return Response.status(200).entity(productList).build();
 			
 		} catch (Exception e) {
