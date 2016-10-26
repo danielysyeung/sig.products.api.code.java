@@ -3,6 +3,7 @@ package sig.products.api.web;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
+import javax.ws.rs.OPTIONS;
 import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
@@ -41,6 +42,12 @@ public class ProductResource {
 	
 	public String mongoUri = "mongodb://localhost";
 	public String sigDb = "sigdb";
+	
+	public String httpHeaderAccessControlAllowOrigin = "*";
+	public String httpHeaderAccessControlAllowMethods = "HEAD, GET, PUT, POST, DELETE, OPTIONS";
+	public String httpHeaderAccessControlAllowHeaders = "Accept, Content-Type";
+	public String about = "{ \"Name\": \"ProductsService\", \"Version\": \"0.1\", \"Framework\": \"Java+MongoDB\" }";
+	public int dbQueryHardLimit = 100;
 			
 	@GET
 	@Path("/")
@@ -48,21 +55,25 @@ public class ProductResource {
 	public Response getAll(@QueryParam("sku") final String sku) {
 		System.out.println("GET request for /products");
 		
+		MongoClient client = null;
+		MongoDatabase db = null;
+		
 		try {
 			
 			Bson fieldProjection = fields(include("sku", "name", "description", "lastUpdatedTimestamp"), excludeId());
-			Bson queryBySku = new Document();
+			Bson queryBySku = new Document();			
 			
 			// TODO filtering, sorting, pagination		
 			if (sku != null && !sku.trim().isEmpty()) {
 				queryBySku = eq("sku", sku);
 			}
+			int queryLimit = dbQueryHardLimit;
 						
-			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
-			MongoDatabase db = client.getDatabase(sigDb); 
+			client = new MongoClient(new MongoClientURI(mongoUri)); 
+			db = client.getDatabase(sigDb); 
 			MongoCollection<Document> collection = db.getCollection("product");
 			
-			FindIterable<Document> docs = collection.find(queryBySku).projection(fieldProjection);
+			FindIterable<Document> docs = collection.find(queryBySku).limit(queryLimit).projection(fieldProjection);
 			
 			List<Product> productList = new ArrayList<Product>();			
 			if (docs != null && docs.iterator() != null) {				
@@ -80,11 +91,19 @@ public class ProductResource {
 				}
 			}										
 			client.close();			
-			return Response.status(200).entity(productList).build();
+			return Response.status(200)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity(productList).build();
 			
 		} catch (Exception e) {
 			System.out.println("Error: " + e);
-			return Response.status(500).entity("").build();
+			return Response.status(500)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();
+		} finally {
+			if (client != null) {
+				client.close();
+			}
 		}
 	}
 
@@ -94,20 +113,25 @@ public class ProductResource {
 	public Response get(@PathParam("sku") final String sku) {
 		System.out.println("GET request for /products/");
 		
+		MongoClient client = null;
+		MongoDatabase db = null;
+		
 		try {
 			
 			Bson queryBySku = eq("sku", sku);
 			Bson fieldProjection = fields(include("sku", "name", "description", "lastUpdatedTimestamp"), excludeId());
 			
-			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
-			MongoDatabase db = client.getDatabase(sigDb); 
+			client = new MongoClient(new MongoClientURI(mongoUri)); 
+			db = client.getDatabase(sigDb); 
 			MongoCollection<Document> collection = db.getCollection("product");
 			
 			Document doc = collection.find(queryBySku).projection(fieldProjection).first();
 			client.close();
 			
 			if (doc == null) {
-				return Response.status(404).entity("").build();
+				return Response.status(404)
+					.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+					.entity("").build();
 			}				
 					
 			Product product = new Product();
@@ -115,20 +139,32 @@ public class ProductResource {
 			product.setName(doc.getString("name"));
 			product.setDescription(doc.getString("description"));
 			product.setLastUpdatedTimestamp(doc.getDate("lastUpdatedTimestamp"));			
-			return Response.status(200).entity(product).build();
+			return Response.status(200)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity(product).build();
 			
 		} catch (Exception e) {
 			System.out.println("Error: " + e);
-			return Response.status(500).entity("").build();
+			return Response.status(500)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();
+		} finally {
+			if (client != null) {
+				client.close();
+			}
 		}
 	}
 	
 	@POST
 	@Path("/")
-	@Consumes(MediaType.APPLICATION_JSON)	
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
 	public Response post(final Product product) {		
 		System.out.println("POST request for /products");
 
+		MongoClient client = null;
+		MongoDatabase db = null;
+		
 		try {
 
 			String productInJson = new ObjectMapper().writeValueAsString(product);		
@@ -136,33 +172,54 @@ public class ProductResource {
 
 			if (product.getSku() == null || product.getSku().trim().isEmpty() || 
 				product.getName() == null || product.getName().trim().isEmpty()) {
-				return Response.status(400).entity("").build();
+				return Response.status(400)
+					.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)		
+					.entity("").build();
 			}
 			
 			Bson queryBySku = eq("sku", product.getSku());
-			Document valueDoc = new Document().append("sku", product.getSku()).append("name", product.getName()).append("description", product.getDescription());
+			Document valueDoc = new Document()
+				.append("sku", product.getSku())
+				.append("name", product.getName())
+				.append("description", product.getDescription());
 						
-			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
-			MongoDatabase db = client.getDatabase(sigDb); 
+			client = new MongoClient(new MongoClientURI(mongoUri)); 
+			db = client.getDatabase(sigDb); 
 			MongoCollection<Document> collection = db.getCollection("product");
 
-			collection.updateOne(queryBySku, new Document("$set", valueDoc).append("$currentDate", new Document("lastUpdatedTimestamp", true)),	new UpdateOptions().upsert(true));
+			collection.updateOne(
+				queryBySku, 
+				new Document("$set", valueDoc).append("$currentDate", new Document("lastUpdatedTimestamp", true)),
+				new UpdateOptions().upsert(true));
 			client.close();
 			
-			return Response.status(201).location(new URI("/products/" + product.getSku())).entity("").build();						
+			return Response.status(201)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.location(new URI("/products/" + product.getSku()))
+				.entity("").build();						
 			
 		} catch (Exception e) {
 			System.out.println("Error: " + e);
-			return Response.status(500).entity("").build();
+			return Response.status(500)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();
+		} finally {
+			if (client != null) {
+				client.close();
+			}			
 		}
 	}
 	
 	@PUT
 	@Path("{sku}")
-	@Consumes(MediaType.APPLICATION_JSON)	
+	@Consumes(MediaType.APPLICATION_JSON)
+	@Produces(MediaType.APPLICATION_JSON)
 	public Response put(@PathParam("sku") final String sku, final Product product) {		
 		System.out.println("PUT request for /products/");
 
+		MongoClient client = null;
+		MongoDatabase db = null;
+		
 		try {
 
 			String productInJson = new ObjectMapper().writeValueAsString(product);		
@@ -170,61 +227,128 @@ public class ProductResource {
 
 			if (product.getSku() == null || product.getSku().trim().isEmpty() || 
 				product.getName() == null || product.getName().trim().isEmpty()) {
-				return Response.status(400).entity("").build();
+				return Response.status(400)
+					.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+					.entity("").build();
 			}
 			
 			Bson queryBySku = eq("sku", sku);
-			Document valueDoc = new Document().append("sku", product.getSku()).append("name", product.getName()).append("description", product.getDescription());
+			Document valueDoc = new Document()
+				.append("sku", product.getSku())
+				.append("name", product.getName())
+				.append("description", product.getDescription());
 						
-			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
-			MongoDatabase db = client.getDatabase(sigDb); 
+			client = new MongoClient(new MongoClientURI(mongoUri)); 
+			db = client.getDatabase(sigDb); 
 			MongoCollection<Document> collection = db.getCollection("product");
 			
 			Document doc = collection.find(queryBySku).first();
 			if (doc == null) {
 				client.close();
-				return Response.status(404).entity("").build();
+				return Response.status(404)
+					.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+					.entity("").build();
 			}
 
-			collection.updateOne(queryBySku, new Document("$set", valueDoc).append("$currentDate", new Document("lastUpdatedTimestamp", true)),	new UpdateOptions().upsert(true));
+			collection.updateOne(
+				queryBySku, 
+				new Document("$set", valueDoc).append("$currentDate", new Document("lastUpdatedTimestamp", true)),
+				new UpdateOptions().upsert(true));
 			client.close();
 			
-			return Response.status(204).entity("").build();						
+			return Response.status(204)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();						
 			
 		} catch (Exception e) {
 			System.out.println("Error: " + e);
-			return Response.status(500).entity("").build();
+			return Response.status(500)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();
+		} finally {
+			if (client != null) {
+				client.close();
+			}
 		}
 	}
 	
 	@DELETE
-	@Path("{sku}")	
+	@Path("{sku}")
+	@Produces(MediaType.APPLICATION_JSON)
 	public Response delete(@PathParam("sku") final String sku) {		
 		System.out.println("DELETE request for /products/");
 
+		MongoClient client = null; 
+		MongoDatabase db = null;
+		
 		try {
-
+			
 			Bson queryBySku = eq("sku", sku);
 
-			MongoClient client = new MongoClient(new MongoClientURI(mongoUri)); 
-			MongoDatabase db = client.getDatabase(sigDb); 
+			client = new MongoClient(new MongoClientURI(mongoUri)); 
+			db = client.getDatabase(sigDb); 
 			MongoCollection<Document> collection = db.getCollection("product");
 			
 			Document doc = collection.find(queryBySku).first();
 			if (doc == null) {
 				client.close();
-				return Response.status(404).entity("").build();
+				return Response.status(404)
+					.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+					.entity("").build();
 			}
 
 			collection.deleteOne(queryBySku);
 			client.close();
 			
-			return Response.status(200).entity("").build();						
+			return Response.status(200)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();						
 			
 		} catch (Exception e) {
 			System.out.println("Error: " + e);
-			return Response.status(500).entity("").build();
+			return Response.status(500)
+				.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+				.entity("").build();
+		} finally {
+			if (client != null) {
+				client.close();
+			}
 		}
 	}
 	
+	@OPTIONS
+	@Path("/")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response optionsAll() {
+		System.out.println("OPTIONS request for /products");
+		return Response.status(200)
+			.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+			.header("Access-Control-Allow-Headers", httpHeaderAccessControlAllowHeaders)
+			.header("Access-Control-Allow-Methods", httpHeaderAccessControlAllowMethods)
+			.header("Allow", httpHeaderAccessControlAllowMethods)
+			.entity("").build();
+	}
+	
+	@OPTIONS
+	@Path("{sku}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response options() {
+		System.out.println("OPTIONS request for /products/");
+		return Response.status(200)
+			.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+			.header("Access-Control-Allow-Headers", httpHeaderAccessControlAllowHeaders)
+			.header("Access-Control-Allow-Methods", httpHeaderAccessControlAllowMethods)
+			.header("Allow", httpHeaderAccessControlAllowMethods)		
+			.entity("").build();
+	}
+	
+	@GET
+	@Path("/service/about")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response about() {
+		System.out.println("GET request for /products/service/about");
+		return Response.status(200)
+			.header("Access-Control-Allow-Origin", httpHeaderAccessControlAllowOrigin)
+			.entity(about).build();
+	}
 }
